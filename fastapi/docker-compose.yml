@@ -1,0 +1,105 @@
+services:
+  theatre-db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - ./database_dump.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  api:
+    build: ./api
+    restart: unless-stopped
+    depends_on:
+      theatre-db:
+        condition: service_healthy
+      elastic:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    env_file:
+      - ./.env
+    environment:
+      PG_HOST: theatre-db
+      PG_PORT: 5432
+      PG_DB: ${POSTGRES_DB}
+      PG_USER: ${POSTGRES_USER}
+      PG_PASSWORD: ${POSTGRES_PASSWORD}
+      ES_HOST: elastic
+      ES_PORT: 9200
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    ports:
+      - "8000:8000"
+  
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+    ports:
+      - "8000:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf/site.conf:/etc/nginx/conf/site.conf:ro
+        
+
+  redis:
+    image: redis:7.2-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6380:6378"
+
+  elastic:
+    image: elasticsearch:8.6.2
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200 >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  etl:
+    build: ./etl
+    restart: unless-stopped
+    depends_on:
+      theatre-db:
+        condition: service_healthy
+      elastic:
+        condition: service_healthy
+    env_file:
+      - ./.env
+    environment:
+      PG_HOST: theatre-db
+      PG_PORT: 5432
+      PG_DB: ${POSTGRES_DB}
+      PG_USER: ${POSTGRES_USER}
+      PG_PASSWORD: ${POSTGRES_PASSWORD}
+      ES_URL: http://elastic:9200
+      STATE_FILE: /opt/etl/state/state.json
+      BATCH_SIZE: 200
+    volumes:
+      - etl-state:/opt/etl/state
+
+volumes:
+  db-data:
+  es-data:
+  etl-state:

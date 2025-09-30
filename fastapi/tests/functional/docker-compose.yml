@@ -1,0 +1,91 @@
+version: "3.9"
+
+services:
+  elastic:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.6.2
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms256m -Xmx256m
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200 >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    ports:
+      - "9200:9200"
+
+  redis:
+    image: redis:7.2-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build:
+      context: ../../api
+    environment:
+      PROJECT_NAME: Async API
+      PROJECT_DESCRIPTION: Async API service
+      PROJECT_VERSION: "1.0"
+      ES_HOST: elastic
+      ES_PORT: 9200
+      ES_SCHEME: http
+      ES_MOVIES_INDEX: movies
+      ES_GENRES_INDEX: genres
+      ES_PERSONS_INDEX: persons
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      CACHE_EXPIRE_SECONDS: 60
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: movies
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_SCHEMA: content
+      POSTGRES_OPTIONS: ""
+    depends_on:
+      elastic:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  tests:
+    image: python:3.11-slim
+    working_dir: /project/fastapi/tests/functional
+    volumes:      
+      - ../../..:/project
+    environment:
+      PYTHONPATH: /project/fastapi
+      SERVICE_URL: http://api:8000
+      ELASTIC_HOST: http://elastic:9200
+      ES_MOVIES_INDEX: movies
+      ES_GENRES_INDEX: genres
+      ES_PERSONS_INDEX: persons
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+    depends_on:
+      api:
+        condition: service_started
+      elastic:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command:
+      - bash
+      - -lc
+      - |
+        set -e
+        pip install --no-cache-dir -r /project/fastapi/tests/functional/requirements.txt
+        python utils/wait_for_es.py
+        python utils/wait_for_redis.py
+        pytest -vv src

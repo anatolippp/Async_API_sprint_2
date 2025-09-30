@@ -1,0 +1,5 @@
+aiohttp==3.9.5
+pytest==8.2.2
+pytest-asyncio==0.23.7
+elasticsearch[async]==8.13.0
+redis==5.0.4

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-
+from http import HTTPStatus
 import pytest
 
 from tests.functional.settings import test_settings
@@ -20,14 +20,14 @@ async def test_films_list_validation_errors(load_movies, http_session, service_u
     ]
     for params in invalid_params:
         async with http_session.get(url, params=params) as response:
-            assert response.status == 422
+            assert response.status == HTTPStatus.UNPROCESSABLE_ENTITY
 
 
 @pytest.mark.asyncio
 async def test_film_details_validation_error(http_session, service_url):
     url = f"{service_url}/api/v1/films/not-a-uuid"
     async with http_session.get(url) as response:
-        assert response.status == 422
+        assert response.status == HTTPStatus.UNPROCESSABLE_ENTITY
 
 
 @pytest.mark.asyncio
@@ -37,7 +37,7 @@ async def test_film_details_returns_film(load_all_data, http_session, service_ur
     film_id = es_data.MOVIES[0]["id"]
     url = f"{service_url}/api/v1/films/{film_id}"
     async with http_session.get(url) as response:
-        assert response.status == 200
+        assert response.status == HTTPStatus.OK
         payload = await response.json()
 
     assert payload["uuid"] == film_id
@@ -55,7 +55,7 @@ async def test_film_details_not_found(load_movies, http_session, service_url):
 
     url = f"{service_url}/api/v1/films/{uuid.uuid4()}"
     async with http_session.get(url) as response:
-        assert response.status == 404
+        assert response.status == HTTPStatus.NOT_FOUND
 
 
 @pytest.mark.asyncio
@@ -65,7 +65,7 @@ async def test_films_list_returns_all_movies(load_movies, http_session, service_
     url = f"{service_url}/api/v1/films/"
     params = {"page_size": 10}
     async with http_session.get(url, params=params) as response:
-        assert response.status == 200
+        assert response.status == HTTPStatus.OK
         body = await response.json()
 
     assert len(body) == len(es_data.MOVIES)
@@ -78,14 +78,14 @@ async def test_film_details_cached(load_movies, http_session, es_client, service
     film_id = es_data.MOVIES[1]["id"]
     url = f"{service_url}/api/v1/films/{film_id}"
     async with http_session.get(url) as response:
-        assert response.status == 200
+        assert response.status == HTTPStatus.OK
         first = await response.json()
 
 
     await es_client.indices.delete(index=test_settings.es_movies_index)
 
     async with http_session.get(url) as cached_response:
-        assert cached_response.status == 200
+        assert cached_response.status == HTTPStatus.OK
         cached = await cached_response.json()
 
 

@@ -1,25 +1,31 @@
 from __future__ import annotations
 
 import asyncio
-import os
+import logging
 
+from elastic_transport import ConnectionError, ConnectionTimeout
 from elasticsearch import AsyncElasticsearch
+
+from tests.functional.settings import test_settings
+from tests.functional.utils.backoff import async_backoff
+
+logger = logging.getLogger(__name__)
+
+
+@async_backoff(
+    exceptions=(ConnectionError, ConnectionTimeout, asyncio.TimeoutError, RuntimeError),
+    tries=10,
+    logger=logger,
+)
+async def _ping(client: AsyncElasticsearch) -> None:
+    if not await client.ping():
+        raise RuntimeError("Elasticsearch ping returned False")
 
 
 async def wait_for_es(timeout: int = 60) -> None:
-    host = os.getenv("ELASTIC_HOST", "http://127.0.0.1:9200")
-    deadline = asyncio.get_event_loop().time() + timeout
-    client = AsyncElasticsearch(hosts=[host], verify_certs=False)
+    client = AsyncElasticsearch(hosts=[test_settings.es_host], verify_certs=False)
     try:
-        while True:
-            try:
-                if await client.ping():
-                    return
-            except Exception:
-                pass
-            if asyncio.get_event_loop().time() >= deadline:
-                raise TimeoutError("Elasticsearch is unavailable")
-            await asyncio.sleep(1)
+        await asyncio.wait_for(_ping(client), timeout=timeout)
     finally:
         await client.close()
 

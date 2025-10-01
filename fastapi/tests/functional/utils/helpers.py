@@ -29,14 +29,17 @@ async def load_bulk(
         actions.append({"_index": index, "_id": document["id"], "_source": document})
 
     if actions:
-        success, errors = await async_bulk(client=client, actions=actions)
+        success, errors = await async_bulk(
+            client=client,
+            actions=actions,
+            refresh="wait_for",
+        )
         if errors:
             raise RuntimeError(f"Failed to load data to index {index}: {errors}")
         if success != len(actions):
             raise RuntimeError(
                 f"Unexpected number of indexed documents: {success} != {len(actions)}"
-            )
-    await client.indices.refresh(index=index)
+            )   
 
 
 async def flush_redis(redis: Redis) -> None:

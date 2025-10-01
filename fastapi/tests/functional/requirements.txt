@@ -3,3 +3,5 @@ pytest==8.2.2
 pytest-asyncio==0.23.7
 elasticsearch[async]==8.13.0
 redis==5.0.4
+pydantic==2.7.4
+pydantic-settings==2.3.4

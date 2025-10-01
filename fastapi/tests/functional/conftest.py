@@ -9,9 +9,9 @@ import pytest_asyncio
 from elasticsearch import AsyncElasticsearch
 from redis.asyncio import Redis, from_url as redis_from_url
 
-from .settings import test_settings
-from .testdata import es_data
-from .testdata.es_mapping import (
+from tests.functional.settings import test_settings
+from tests.functional.testdata import es_data
+from tests.functional.testdata.es_mapping import (
     GENRES_INDEX_MAPPING,
     MOVIES_INDEX_MAPPING,
     PERSONS_INDEX_MAPPING,

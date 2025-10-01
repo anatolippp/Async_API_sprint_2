@@ -1,16 +1,17 @@
 from __future__ import annotations
 
+from http import HTTPStatus
 import pytest
 
-from ..settings import test_settings
-from ..testdata import es_data
+from tests.functional.settings import test_settings
+from tests.functional.testdata import es_data
 
 
 @pytest.mark.asyncio
 async def test_search_validation_errors(http_session, service_url):
     url = f"{service_url}/api/v1/films/search/"
     async with http_session.get(url) as response:
-        assert response.status == 422
+        assert response.status == HTTPStatus.UNPROCESSABLE_ENTITY
 
     query_params = [
         {"query": "", "page_size": 1, "page_number": 1},
@@ -21,7 +22,7 @@ async def test_search_validation_errors(http_session, service_url):
 
     for params in query_params:
         async with http_session.get(url, params=params) as response:
-            assert response.status == 422
+            assert response.status == HTTPStatus.UNPROCESSABLE_ENTITY
 
 
 @pytest.mark.asyncio
@@ -31,7 +32,7 @@ async def test_search_returns_limited_number_of_records(load_movies, http_sessio
     url = f"{service_url}/api/v1/films/search/"
     params = {"query": "star", "page_size": 2}
     async with http_session.get(url, params=params) as response:
-        assert response.status == 200
+        assert response.status == HTTPStatus.OK
 
 
         body = await response.json()  
@@ -46,7 +47,7 @@ async def test_search_finds_records_by_phrase(load_movies, http_session, service
     url = f"{service_url}/api/v1/films/search/"
     params = {"query": "galaxy"}
     async with http_session.get(url, params=params) as response:
-        assert response.status == 200
+        assert response.status == HTTPStatus.OK
         body = await response.json()
 
     assert {item["title"] for item in body} == {es_data.MOVIES[1]["title"]}
@@ -59,12 +60,12 @@ async def test_search_uses_cache(load_movies, http_session, es_client, service_u
     url = f"{service_url}/api/v1/films/search/"
     params = {"query": "star"}
     async with http_session.get(url, params=params) as response:
-        assert response.status == 200
+        assert response.status == HTTPStatus.OK
         initial_payload = await response.json()
 
     await es_client.indices.delete(index=test_settings.es_movies_index)
 
     async with http_session.get(url, params=params) as cached_response:
-        assert cached_response.status == 200
+        assert cached_response.status == HTTPStatus.OK
         cached_payload = await cached_response.json()
     assert cached_payload == initial_payload

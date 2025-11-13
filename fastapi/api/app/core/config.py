@@ -4,7 +4,7 @@ from functools import lru_cache
 from typing import Any
 from urllib.parse import quote_plus
 
-from pydantic import Field
+from pydantic import AnyUrl, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -31,6 +31,29 @@ class Settings(BaseSettings):
     redis_port: int = Field(alias="REDIS_PORT")
     redis_db: int = Field(alias="REDIS_DB")
     cache_expire: int = Field(alias="CACHE_EXPIRE_SECONDS")
+
+    auth_service_url: AnyUrl = Field(
+        default="http://auth-api:8000", alias="AUTH_SERVICE_URL"
+    )
+    auth_service_introspection_path: str = Field(
+        default="/api/v1/auth/token/introspect",
+        alias="AUTH_SERVICE_INTROSPECTION_PATH",
+    )
+    auth_service_internal_api_key: str | None = Field(
+        default=None, alias="AUTH_SERVICE_INTERNAL_API_KEY"
+    )
+    auth_service_timeout: float = Field(
+        default=5.0, alias="AUTH_SERVICE_TIMEOUT"
+    )
+    auth_service_max_retries: int = Field(
+        default=3, alias="AUTH_SERVICE_MAX_RETRIES"
+    )
+    auth_service_backoff_factor: float = Field(
+        default=0.5, alias="AUTH_SERVICE_BACKOFF_FACTOR"
+    )
+    auth_cache_ttl_seconds: int = Field(
+        default=60, alias="AUTH_CACHE_TTL_SECONDS"
+    )
 
     pg_host: str = Field(alias="POSTGRES_HOST")
     pg_port: int = Field(alias="POSTGRES_PORT")

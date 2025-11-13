@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from typing import Any, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
@@ -10,6 +10,7 @@ from ...core.dependencies import (
     get_film_service,
     get_person_service,
 )
+from ...core.security import AuthenticatedUser, get_current_user_payload
 from ...db.serializers.film import FilmShortSerializer
 from ...db.serializers.person import PersonDetailSerializer
 from ...services.cache import CacheService
@@ -26,6 +27,7 @@ router = APIRouter(prefix="/persons", tags=["Персоны"])
             description="Информация о персонах")
 async def list_persons(
     request: Request,
+    _: Annotated[AuthenticatedUser, Depends(get_current_user_payload)],
     params: PageParams = Depends(get_pagination_params),
     sort: str | None = Query(None, description="Сортировка персон по именам"),
     person_service: PersonService = Depends(get_person_service),
@@ -57,6 +59,7 @@ async def list_persons(
             description="Полнотекстовый поиск по персонам фильмов")
 async def search_persons(
     request: Request,
+    _: Annotated[AuthenticatedUser, Depends(get_current_user_payload)],
     query: str = Query(..., min_length=1),
     params: PageParams = Depends(get_pagination_params),
     person_service: PersonService = Depends(get_person_service),
@@ -88,6 +91,7 @@ async def search_persons(
             description="Информация о персоне")
 async def person_details(
     person_id: uuid.UUID,
+    _: Annotated[AuthenticatedUser, Depends(get_current_user_payload)],
     person_service: PersonService = Depends(get_person_service),
     cache: CacheService = Depends(get_cache_service),
 ) -> dict[str, Any]:
@@ -109,6 +113,7 @@ async def person_details(
             description="Получение информации о персонах фильма")
 async def person_films(
     person_id: uuid.UUID,
+    _: Annotated[AuthenticatedUser, Depends(get_current_user_payload)],
     params: PageParams = Depends(get_pagination_params),
     film_service: FilmService = Depends(get_film_service),
     cache: CacheService = Depends(get_cache_service),

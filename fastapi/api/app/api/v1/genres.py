@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from typing import Any, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from ...core.dependencies import get_cache_service, get_genre_service
+from ...core.security import AuthenticatedUser, get_current_user_payload
 from ...db.serializers.genre import GenreSerializer
 from ...services.cache import CacheService
 from ...services.genres import GenreService
@@ -20,6 +21,7 @@ router = APIRouter(prefix="/genres", tags=["Жанры"])
             description="Информация о жанрах фильмов")
 async def list_genres(
     request: Request,
+    _: Annotated[AuthenticatedUser, Depends(get_current_user_payload)],
     params: PageParams = Depends(get_pagination_params),
     sort: str | None = Query(None, description="Сортировка жанров фильмов по названию"),
     genre_service: GenreService = Depends(get_genre_service),
@@ -51,6 +53,7 @@ async def list_genres(
             description="Информация о жанре фильма")
 async def genre_details(
     genre_id: uuid.UUID,
+    _: Annotated[AuthenticatedUser, Depends(get_current_user_payload)],
     genre_service: GenreService = Depends(get_genre_service),
     cache: CacheService = Depends(get_cache_service),
 ) -> dict[str, Any]:

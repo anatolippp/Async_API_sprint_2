@@ -5,6 +5,7 @@ from elasticsearch import AsyncElasticsearch
 from redis.asyncio import Redis
 
 from .config import settings
+from ..integrations.auth_client import AuthServiceClient
 from ..services.cache import CacheService
 from ..services.films import FilmService
 from ..services.genres import GenreService
@@ -27,6 +28,13 @@ async def get_elastic(request: Request) -> AsyncElasticsearch:
 
 def get_cache_service(redis: Redis = Depends(get_redis)) -> CacheService:
     return CacheService(redis=redis, ttl=settings.cache_expire)
+
+
+async def get_auth_service_client(request: Request) -> AuthServiceClient:
+    client: AuthServiceClient | None = getattr(request.app.state, "auth_client", None)
+    if client is None:
+        raise RuntimeError("Auth service client is not initialised")
+    return client
 
 
 def get_film_service(

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any, Annotated
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
@@ -9,7 +9,7 @@ from ...core.dependencies import (
     get_cache_service,
     get_film_service,
 )
-from ...core.security import AuthenticatedUser, get_current_user_payload
+from ...core.security import ResilientCurrentUser
 from ...db.serializers.film import FilmDetailSerializer, FilmShortSerializer
 from ...services.cache import CacheService
 from ...services.films import FilmService
@@ -24,7 +24,7 @@ router = APIRouter(prefix="/films", tags=["Фильмы"])
             description="Получение списка кинопроизведений",)
 async def films_list(
     request: Request,
-    _: Annotated[AuthenticatedUser, Depends(get_current_user_payload)],
+    _: ResilientCurrentUser,
     params: PageParams = Depends(get_pagination_params),
     sort: str | None = Query(None, description="Сортировка фильмов по рейтингу"),
     genre: uuid.UUID | None = Query(None, description="Genre UUID для фильтра"),
@@ -60,7 +60,7 @@ async def films_list(
             )
 async def films_search(
     request: Request,
-    _: Annotated[AuthenticatedUser, Depends(get_current_user_payload)],
+    _: ResilientCurrentUser,
     query: str = Query(..., min_length=1, description="Поисковая фраза"),
     params: PageParams = Depends(get_pagination_params),
     film_service: FilmService = Depends(get_film_service),
@@ -92,7 +92,7 @@ async def films_search(
             description="Получение описания фильма")
 async def film_details(
     film_id: uuid.UUID,
-     _: Annotated[AuthenticatedUser, Depends(get_current_user_payload)],
+     _: ResilientCurrentUser,
     film_service: FilmService = Depends(get_film_service),
     cache: CacheService = Depends(get_cache_service),
 ) -> dict[str, Any]:

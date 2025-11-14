@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import ValidationError
 from redis.asyncio import Redis
@@ -51,7 +51,15 @@ def _token_cache_key(token: str) -> str:
     return f"auth:introspection:{digest}"
 
 
+def _extract_request_id(request: Request) -> str | None:
+    header = request.headers.get("x-request-id")
+    if header:
+        return header
+    return getattr(request.state, "request_id", None)
+
+
 async def get_current_user_payload(
+    request: Request,
     credentials: Annotated[
         HTTPAuthorizationCredentials | None,
         Depends(http_bearer),
@@ -71,9 +79,13 @@ async def get_current_user_payload(
     cached = await _load_cached_payload(redis, token)
     if cached is not None:
         return cached
+    
+    request_id = _extract_request_id(request)
 
     try:
-        payload = await auth_client.introspect_token(token)
+        payload = await auth_client.introspect_token(
+            token, request_id=request_id
+        )
     except AuthServiceUnauthorizedError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -107,6 +119,7 @@ CurrentUser = Annotated[AuthenticatedUser, Depends(get_current_user_payload)]
 
 
 async def get_optional_user_payload(
+    request: Request,
     credentials: Annotated[
         HTTPAuthorizationCredentials | None,
         Depends(http_bearer),
@@ -121,9 +134,13 @@ async def get_optional_user_payload(
     cached = await _load_cached_payload(redis, token)
     if cached is not None:
         return cached
+    
+    request_id = _extract_request_id(request)
 
     try:
-        payload = await auth_client.introspect_token(token)
+        payload = await auth_client.introspect_token(
+            token, request_id=request_id
+        )
     except AuthServiceUnauthorizedError:
         return None
     except AuthServiceUnavailableError:
@@ -143,10 +160,67 @@ OptionalCurrentUser = Annotated[
     Depends(get_optional_user_payload),
 ]
 
+async def get_resilient_user_payload(
+    request: Request,
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None,
+        Depends(http_bearer),
+    ],
+    auth_client: AuthServiceClient = Depends(get_auth_service_client),
+    redis: Redis = Depends(get_redis),
+) -> TokenIntrospectionResult | None:
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token = credentials.credentials
+
+    cached = await _load_cached_payload(redis, token)
+    if cached is not None:
+        return cached
+
+    request_id = _extract_request_id(request)
+
+    try:
+        payload = await auth_client.introspect_token(
+            token,
+            request_id=request_id,
+            max_retries=1,
+        )
+    except AuthServiceUnauthorizedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+    except (AuthServiceUnavailableError, AuthServiceError):
+        return None
+
+    if not payload.active or not payload.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    await _store_payload(redis, token, payload)
+    return payload
+
+
+ResilientCurrentUser = Annotated[
+    TokenIntrospectionResult | None,
+    Depends(get_resilient_user_payload),
+]
+
 __all__ = [
     "AuthenticatedUser",
     "CurrentUser",
+    "ResilientCurrentUser",
     "OptionalCurrentUser",
     "get_current_user_payload",
     "get_optional_user_payload",
+    "get_resilient_user_payload",
 ]

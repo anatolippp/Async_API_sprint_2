@@ -49,7 +49,13 @@ class AuthServiceClient:
     async def close(self) -> None:
         await self._client.aclose()
 
-    async def introspect_token(self, token: str) -> "TokenIntrospectionResult":
+    async def introspect_token(
+        self,
+        token: str,
+        *,
+        request_id: str | None = None,
+        max_retries: int | None = None,
+    ) -> "TokenIntrospectionResult":
         """Verify the provided token via the authentication service."""
 
         payload = {
@@ -58,11 +64,15 @@ class AuthServiceClient:
             "include_roles": True,
         }
 
-        headers = {}
+        headers: dict[str, str] = {}
         if self._internal_api_key:
             headers["X-Internal-Api-Key"] = self._internal_api_key
+        if request_id:
+            headers["X-Request-Id"] = request_id
 
-        for attempt in range(1, self._max_retries + 1):
+        attempts_limit = max(1, max_retries or self._max_retries)
+
+        for attempt in range(1, attempts_limit + 1):
             try:
                 response = await self._client.post(
                     self._introspection_path,
@@ -73,8 +83,8 @@ class AuthServiceClient:
                 logger.warning(
                     "Auth service request error on attempt %s: %s", attempt, exc
                 )
-                await self._maybe_sleep(attempt)
-                if attempt == self._max_retries:
+                await self._maybe_sleep(attempt, attempts_limit)
+                if attempt == attempts_limit:
                     raise AuthServiceUnavailableError("Authentication service unavailable") from exc
                 continue
 
@@ -106,8 +116,8 @@ class AuthServiceClient:
                     attempt,
                     response.text,
                 )
-                await self._maybe_sleep(attempt)
-                if attempt == self._max_retries:
+                await self._maybe_sleep(attempt, attempts_limit)
+                if attempt == attempts_limit:
                     raise AuthServiceUnavailableError("Authentication service unavailable")
                 continue
 
@@ -122,8 +132,8 @@ class AuthServiceClient:
 
         raise AuthServiceUnavailableError("Authentication service unavailable")
 
-    async def _maybe_sleep(self, attempt: int) -> None:
-        if attempt >= self._max_retries:
+    async def _maybe_sleep(self, attempt: int, attempts_limit: int) -> None:
+        if attempt >= attempts_limit:
             return
         delay = self._backoff_factor * (2 ** (attempt - 1))
         if delay > 0:

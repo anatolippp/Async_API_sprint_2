@@ -1,0 +1,151 @@
+version: "3.9"
+
+services:
+  api:
+    build: .
+    env_file:
+      - .env
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    ports:
+      - "8000:8000"
+    labels:
+      collect_logs: "true"
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: app
+      MONGO_INITDB_ROOT_PASSWORD: app
+    volumes:
+      - mongo-data:/data/db
+    command: ["--wiredTigerCacheSizeGB", "1"]
+
+  postgres:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ugc
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres-init.sql:/docker-entrypoint-initdb.d/postgres-init.sql:ro
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.4
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+    ports:
+      - "9200:9200"
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.11.4
+    depends_on:
+      - elasticsearch
+    volumes:
+      - ./logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
+    ports:
+      - "5044:5044"
+      - "9600:9600"
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.4
+    depends_on:
+      - elasticsearch
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.11.4
+    user: root
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - ./filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+    depends_on:
+      - logstash
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  glitchtip-db:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: glitchtip
+      POSTGRES_USER: glitchtip
+      POSTGRES_PASSWORD: glitchtip
+    volumes:
+      - glitchtip-data:/var/lib/postgresql/data
+
+  glitchtip:
+    image: ghcr.io/glitchtip/glitchtip:3.4.0
+    depends_on:
+      - glitchtip-db
+      - redis
+    environment:
+      DATABASE_URL: postgresql://glitchtip:glitchtip@glitchtip-db:5432/glitchtip
+      SECRET_KEY: ${GLITCHTIP_SECRET_KEY:-changeme}
+      REDIS_URL: redis://redis:6379/0
+      EMAIL_URL: consolemail://
+      DEFAULT_FROM_EMAIL: admin@example.com
+      GLITCHTIP_DOMAIN: http://glitchtip:8000
+      GLITCHTIP_ALLOWED_HOSTS: "*"
+      GLITCHTIP_CREATE_ORGANIZATION: 1
+      GLITCHTIP_ORGANIZATION_NAME: practicum
+      GLITCHTIP_ORGANIZATION_SLUG: practicum
+      GLITCHTIP_USER_EMAIL: admin@example.com
+      GLITCHTIP_USER_PASSWORD: adminadmin
+    ports:
+      - "9000:8000"
+    restart: unless-stopped
+
+  seed:
+    build: .
+    env_file:
+      - .env
+    command: [
+      "python",
+      "scripts/generate_data.py",
+      "--records",
+      "${DATASET_RECORDS:-10000000}",
+      "--batch",
+      "${DATASET_BATCH:-5000}",
+    ]
+    depends_on:
+      - mongo
+      - postgres
+    restart: "no"
+
+  benchmark:
+    build: .
+    env_file:
+      - .env
+    command: ["python", "scripts/test_performance.py", "--output", "reports/performance.md"]
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    restart: "no"
+    volumes:
+      - ./reports:/app/reports
+
+volumes:
+  mongo-data:
+  postgres-data:
+  es-data:
+  glitchtip-data:

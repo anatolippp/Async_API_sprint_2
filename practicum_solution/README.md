@@ -22,36 +22,11 @@
 
 ## Запуск инфраструктуры
 
-1. Создайте файл `.env` из шаблона и при необходимости поправьте размеры датасета (для слабых машин можно уменьшить `DATASET_RECORDS`):
-
 ```bash
 cd practicum_solution
 cp env.example .env
-```
-
-Минимально достаточные значения:
-
-```dotenv
-MONGO_URL=mongodb://app:app@mongo:27017/ugc
-POSTGRES_DSN=postgresql://app:app@postgres:5432/ugc
-SENTRY_DSN=                               # выданный облачным Sentry DSN проекта
-TELEGRAM_TOKEN=000000:telegram_token
-TELEGRAM_CHAT_ID=123456
-DATASET_RECORDS=10000000
-DATASET_BATCH=5000
-DATASET_SEED=42
-```
-
-Перед стартом получите значения, которые нельзя оставить пустыми:
-
-* **SENTRY_DSN** — зарегистрируйте аккаунт на sentry.io, создайте проект **Python**, скопируйте DSN и вставьте в `.env`. Если заполнить позже, контейнер `api` придётся перезапустить (`docker compose up -d --force-recreate api`), иначе ошибки не отправятся в Sentry.
-* **TELEGRAM_TOKEN/TELEGRAM_CHAT_ID** — создайте бота у BotFather (`/newbot`), добавьте его в нужный чат, отправьте сообщение и получите chat id через `https://api.telegram.org/bot<TOKEN>/getUpdates` или бота @userinfobot. Эти поля использует CI в GitHub Actions; при пустых значениях шаг уведомления завершится ошибкой.
-
-2. Поднимите сервисы, сидирование и бенчмарк одной командой (`docker compose` v2, без устаревшего ключа `version`):
-
-```bash
 # поднимаем сервисы, наполняем БД 10 млн записей и снимаем бенчмарк (отчёт попадёт в ./reports)
-docker compose up -d --build
+docker compose up -d
 ```
 
 `docker-compose.yml` разворачивает:
@@ -60,7 +35,8 @@ docker compose up -d --build
 * PostgreSQL (для сравнения и аналитики).
 * Elasticsearch + Logstash + Kibana для трассировки логов (ELK).
 * Filebeat, который читает docker-логи контейнеров с меткой `collect_logs=true` и отправляет их в Logstash.
-* Контейнер `api` (FastAPI + uvicorn), собираемый из `Dockerfile`, который подключён к MongoDB, отправляет логи в ELK и события в облачный Sentry через DSN. Он стартует только после успешного завершения `seed`, чтобы API поднималось на готовых данных.
+* Контейнер GlitchTip (совместимый с Sentry) + Redis для приёма событий ошибок и перформанс-трейсов на отдельной БД `glitchtip`.
+* Контейнер `api` (FastAPI + uvicorn), собираемый из `Dockerfile`, который подключён к MongoDB, отправляет логи в ELK и события в GlitchTip/Sentry через DSN. Он стартует только после успешного завершения `seed`, чтобы API поднималось на готовых данных.
 * Сервис `seed`, который при старте наполнит обе БД идентичными данными объёма 10 млн лайков (закладки и рецензии пропорциональны) без загрузки всего набора в память.
 * Сервис `benchmark`, который после заполнения прогонит `scripts/test_performance.py` и сохранит артефакт `reports/performance.md` на хост через volume `./reports:/app/reports`.
 
@@ -96,11 +72,11 @@ Workflow расположен в корне репозитория и сраба
 ## Логи и мониторинг
 
 * Логи API собирает Filebeat из docker-логов контейнера `api` (метка `collect_logs=true`) и отправляет в Logstash, далее в Elasticsearch; Kibana доступна на `http://localhost:5601`.
-* Для мониторинга ошибок используется официальный облачный Sentry. Создайте в своём аккаунте проект `api`, скопируйте выданный DSN и пропишите его в `.env` как `SENTRY_DSN`. После перезапуска контейнера `api` SDK из `api/main.py` начнёт отправлять события в этот проект.
+* Поднимается GlitchTip на `http://localhost:9000` (логин `admin@example.com` / `adminadmin` из `.env`). В интерфейсе создайте проект, скопируйте его DSN вида `http://<public>@localhost:9000/<project_id>` и пропишите в `.env` как `SENTRY_DSN` — SDK в `api/main.py` начнёт отправлять события в локальный стенд.
 
 ## Содержимое
 
-* `docker-compose.yml` — инфраструктура MongoDB, PostgreSQL, ELK, Filebeat и API-контейнера.
+* `docker-compose.yml` — инфраструктура MongoDB, PostgreSQL, ELK, Filebeat, Sentry-совместимого GlitchTip и API-контейнера.
 * `logstash.conf` — пайплайн для приёма логов от приложения.
 * `env.example` — пример переменных окружения.
 * `scripts/` — генерация и тестирование данных.

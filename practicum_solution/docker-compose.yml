@@ -1,3 +1,5 @@
+version: "3.9"
+
 services:
   api:
     build: .
@@ -77,6 +79,42 @@ services:
       - logstash
     restart: unless-stopped
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  glitchtip-db:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: glitchtip
+      POSTGRES_USER: glitchtip
+      POSTGRES_PASSWORD: glitchtip
+    volumes:
+      - glitchtip-data:/var/lib/postgresql/data
+
+  glitchtip:
+    image: ghcr.io/glitchtip/glitchtip:3.4.0
+    depends_on:
+      - glitchtip-db
+      - redis
+    environment:
+      DATABASE_URL: postgresql://glitchtip:glitchtip@glitchtip-db:5432/glitchtip
+      SECRET_KEY: ${GLITCHTIP_SECRET_KEY:-changeme}
+      REDIS_URL: redis://redis:6379/0
+      EMAIL_URL: consolemail://
+      DEFAULT_FROM_EMAIL: admin@example.com
+      GLITCHTIP_DOMAIN: http://glitchtip:8000
+      GLITCHTIP_ALLOWED_HOSTS: "*"
+      GLITCHTIP_CREATE_ORGANIZATION: 1
+      GLITCHTIP_ORGANIZATION_NAME: practicum
+      GLITCHTIP_ORGANIZATION_SLUG: practicum
+      GLITCHTIP_USER_EMAIL: admin@example.com
+      GLITCHTIP_USER_PASSWORD: adminadmin
+    ports:
+      - "9000:8000"
+    restart: unless-stopped
+
   seed:
     build: .
     env_file:
@@ -110,3 +148,4 @@ volumes:
   mongo-data:
   postgres-data:
   es-data:
+  glitchtip-data:

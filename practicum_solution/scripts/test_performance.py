@@ -205,14 +205,22 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    mongo_url = os.environ.get("MONGO_URL", "mongodb://app:app@localhost:27017/ugc")
-    pg_dsn = os.environ.get("POSTGRES_DSN", "postgresql://app:app@localhost:5432/ugc")
-    records = int(os.environ.get("DATASET_RECORDS", "10000000"))
+    mongo_url = os.environ.get(
+        "MONGO_URL",
+        "mongodb://app:app@mongo:27017/ugc?authSource=admin",
+    )
+    pg_dsn = os.environ.get("POSTGRES_DSN", "postgresql://app:app@postgres:5432/ugc")
+    records = int(os.environ.get("DATASET_RECORDS", "100000"))
     batch = int(os.environ.get("DATASET_BATCH", "5000"))
     seed = int(os.environ.get("DATASET_SEED", "42"))
 
-    pg_conn = psycopg2.connect(pg_dsn)
-    mongo_client: Database = MongoClient(mongo_url).get_default_database()
+    pg_conn = psycopg2.connect(pg_dsn, connect_timeout=30)
+    mongo_client: Database = MongoClient(
+        mongo_url,
+        serverSelectionTimeoutMS=30_000,
+        socketTimeoutMS=30_000,
+        connectTimeoutMS=30_000,
+    ).get_default_database()
 
     samples = pick_samples(mongo_client, pg_conn)
 

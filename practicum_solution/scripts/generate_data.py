@@ -263,21 +263,32 @@ def main() -> None:
     parser.add_argument(
         "--records",
         type=int,
-        default=10_000_000,
-        help="Количество записей лайков (остальные пропорционально)",
+        default=1_000_000,
+        help=(
+            "Количество записей лайков (остальные пропорционально). "
+            "По умолчанию используется облегчённый объём, чтобы контейнер seed "
+            "не зависал на малоресурсных машинах; для полного теста задайте "
+            "DATASET_RECORDS=10000000."
+        ),
     )
     parser.add_argument("--batch", type=int, default=5_000, help="Размер пачки вставки")
     args = parser.parse_args()
 
-    mongo_url = os.environ.get("MONGO_URL", "mongodb://app:app@localhost:27017/ugc")
-    pg_dsn = os.environ.get("POSTGRES_DSN", "postgresql://app:app@localhost:5432/ugc")
+    mongo_url = os.environ.get(
+        "MONGO_URL",
+        "mongodb://app:app@mongo:27017/ugc?authSource=admin",
+    )
+    pg_dsn = os.environ.get("POSTGRES_DSN", "postgresql://app:app@postgres:5432/ugc")
     base_seed = int(os.environ.get("DATASET_SEED", 42))
 
-    mongo_client = MongoClient(mongo_url)
+    mongo_client = MongoClient(mongo_url, serverSelectionTimeoutMS=30_000)
     ensure_mongo(mongo_client)
-    db = mongo_client.get_default_database()
+    try:
+        db = mongo_client.get_default_database()
+    except Exception:
+        db = mongo_client.get_database("ugc")
 
-    pg_conn = psycopg2.connect(pg_dsn)
+    pg_conn = psycopg2.connect(pg_dsn, connect_timeout=30)
     prepare_postgres(pg_conn)
 
     seed_streamed(db, pg_conn, args.records, args.batch, base_seed)
